@@ -50,10 +50,10 @@ const PORT = process.env.PORT || 5000;
 const server = createServer(app);
 
 const io = new Server(server, {
-  pingTimeout: 60000,
+  pingTimeout: 120000,
   cors: {
-    // origin: "http://localhost:3000"
-    origin: "*",
+    origin: "http://localhost:3000",
+    // origin: "*",
     methods: ["GET", "POST"],
     credentials: true,
   },
