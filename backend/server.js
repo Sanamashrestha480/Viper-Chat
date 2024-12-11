@@ -106,6 +106,5 @@ io.on("connection", (socket) => {
     });
   });
 });
-// hi
 
 export default io;
