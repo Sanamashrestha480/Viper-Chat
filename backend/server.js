@@ -10,7 +10,8 @@ import { Server } from "socket.io";
 import { createServer } from "http";
 import cors from "cors"; // Import the cors middleware
 
-const path = require("path");
+// const path = require("path");
+import path from "path";
 dotenv.config();
 connectDB();
 const app = express();
@@ -51,7 +52,8 @@ const server = createServer(app);
 const io = new Server(server, {
   pingTimeout: 60000,
   cors: {
-    origin: "http://localhost:3000",
+    // origin: "http://localhost:3000"
+    origin: "*",
     methods: ["GET", "POST"],
     credentials: true,
   },
