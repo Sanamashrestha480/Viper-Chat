@@ -164,7 +164,7 @@ const PORT = process.env.PORT || 5000;
 // Create HTTP Server
 const server = createServer(app);
 
-// Initialize Socket.IO
+// Initialize Socket.IO ok
 const io = new Server(server, {
   pingTimeout: 120000,
   cors: {
