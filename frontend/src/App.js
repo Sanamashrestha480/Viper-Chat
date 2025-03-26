@@ -23,7 +23,7 @@ function App() {
   return (
     <div className="App">
       <Switch>
-        <Route path="/" component={HomePage} exact />
+        <Route exact path="/" component={HomePage} />
         <Route path="/chats" component={ChatPage} />
       </Switch>
     </div>
@@ -31,3 +31,5 @@ function App() {
 }
 
 export default App;
+
+

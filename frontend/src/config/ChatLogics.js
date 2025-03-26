@@ -1,25 +1,3 @@
-// export const getSender = (loggedUser, users) => {
-// return users[0]._id === loggedUser._id ? users[1].name : users[0].name;
-// };
-
-// export const getSender = (loggedUser, users) => {
-//   if (loggedUser && users && users.length >= 2) {
-//     return users[0]._id === loggedUser._id ? users[1].name : users[0].name;
-//   } else {
-//     // Handle the case when loggedUser or users is undefined or users array doesn't contain at least two elements
-//     return "Unknown Sender";
-//   }
-// };
-
-// export const getSenderFull = (loggedUser, users) => {
-//   if (loggedUser && users && users.length >= 2) {
-//     return users[0]._id === loggedUser._id ? users[1] : users[0].name;
-//   } else {
-//     // Handle the case when loggedUser or users is undefined or users array doesn't contain at least two elements
-//     return "Unknown Sender";
-//   }
-// };
-
 export const getSender = (loggedUser, users) => {
   return users[0]?._id === loggedUser?._id ? users[1].name : users[0].name;
 };
