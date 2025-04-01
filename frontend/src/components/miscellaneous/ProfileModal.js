@@ -52,7 +52,7 @@ const ProfileModal = ({ user, children }) => {
               src={user.pic}
               alt={user.name}
             />
-            <Text fontSize={{ base: "28px", md: "30px" }} fontFamily="roboto">
+            <Text fontSize={{ base: "28px", md: "25px" }} fontFamily="roboto">
               Email: {user.email}
             </Text>
           </ModalBody>
