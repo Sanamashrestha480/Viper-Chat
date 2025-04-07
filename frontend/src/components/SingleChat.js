@@ -8,8 +8,9 @@ import {
   Spinner,
   Text,
   useToast,
+  Tooltip
 } from "@chakra-ui/react";
-import { ArrowBackIcon } from "@chakra-ui/icons";
+import { ArrowBackIcon, WarningIcon, CheckCircleIcon } from "@chakra-ui/icons";
 import { getSender, getSenderFull } from "../config/ChatLogics";
 import ProfileModal from "./miscellaneous/ProfileModal";
 import UpdateGroupChatModal from "./miscellaneous/UpdateGroupChatModal";
@@ -19,9 +20,6 @@ import { io } from "socket.io-client";
 import Lottie from "react-lottie";
 import animationData from "../animations/typing.json";
 
-const ENDPOINT = "http://localhost:5000";
-let socket;
-
 const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -29,10 +27,12 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [socketConnected, setSocketConnected] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [typingUser, setTypingUser] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
   
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
   const notificationSoundRef = useRef(null);
+  const socketRef = useRef(null);
 
   const defaultOptions = {
     loop: true,
@@ -49,7 +49,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
 
   // Initialize notification sound
   useEffect(() => {
-    notificationSoundRef.current = new Audio(process.env.PUBLIC_URL + "/sounds/notification.wav");
+    notificationSoundRef.current = new Audio("/sounds/notification.wav");
     notificationSoundRef.current.load();
     
     return () => {
@@ -82,6 +82,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
         headers: {
           Authorization: `Bearer ${user.token}`,
         },
+        withCredentials: true // Ensure credentials are sent with requests
       };
 
       setLoading(true);
@@ -92,7 +93,9 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       setMessages(data);
       setLoading(false);
 
-      socket.emit("join chat", selectedChat._id);
+      if (socketRef.current) {
+        socketRef.current.emit("join chat", selectedChat._id);
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -104,45 +107,114 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     }
   }, [selectedChat, user.token, toast]);
 
-  // Initialize socket connection
+  // Initialize socket connection with enhanced configuration
   useEffect(() => {
-    socket = io(ENDPOINT, {
-      transports: ["websocket"],
+    const ENDPOINT = process.env.NODE_ENV === 'development'
+      ? "http://localhost:5000"
+      : "https://viper-chat.onrender.com";
+
+    socketRef.current = io(ENDPOINT, {
+      path: "/socket.io",
+      transports: ["websocket", "polling"], // Enable both transports
       withCredentials: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      pingTimeout: 30000,
+      pingInterval: 15000,
+      autoConnect: true,
+      secure: process.env.NODE_ENV === 'production',
+      rejectUnauthorized: false // Only for development/testing
     });
 
-    socket.on("connect", () => {
+    const socket = socketRef.current;
+
+    const handleConnect = () => {
       setSocketConnected(true);
-    });
+      setConnectionStatus("connected");
+      console.log("Connected to WebSocket server");
+      
+      // Re-setup user after reconnection
+      if (user) {
+        socket.emit("setup", user);
+      }
+    };
 
-    socket.on("disconnect", () => {
+    const handleDisconnect = (reason) => {
       setSocketConnected(false);
-    });
+      setConnectionStatus("disconnected");
+      console.log(`Disconnected from WebSocket server. Reason: ${reason}`);
+    };
 
+    const handleConnectError = (err) => {
+      console.log("Connection error:", err);
+      setConnectionStatus("error");
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to chat server",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+        position: "top-right"
+      });
+    };
+
+    const handleReconnecting = (attempt) => {
+      setConnectionStatus(`reconnecting (attempt ${attempt})`);
+      console.log(`Reconnecting attempt ${attempt}`);
+    };
+
+    const handleReconnectFailed = () => {
+      setConnectionStatus("failed");
+      toast({
+        title: "Connection Failed",
+        description: "Could not reconnect to chat server",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+        position: "top-right"
+      });
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
+    socket.on("reconnecting", handleReconnecting);
+    socket.on("reconnect_failed", handleReconnectFailed);
     socket.on("typing", (userId) => {
-      if (userId !== user._id) {
+      if (userId !== user?._id) {
         setTypingUser(userId);
         setIsTyping(true);
       }
     });
-
     socket.on("stop typing", () => {
       setIsTyping(false);
       setTypingUser("");
     });
 
     return () => {
-      socket.disconnect();
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
+      socket.off("reconnecting", handleReconnecting);
+      socket.off("reconnect_failed", handleReconnectFailed);
+      socket.off("typing");
+      socket.off("stop typing");
+      
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
     };
-  }, [user._id]);
+  }, [user, toast]);
 
   // Setup user and fetch messages when selectedChat changes
   useEffect(() => {
-    if (user && socket) {
-      socket.emit("setup", user);
+    if (user && socketRef.current?.connected) {
+      socketRef.current.emit("setup", user);
       fetchMessages();
     }
   }, [user, fetchMessages]);
@@ -150,7 +222,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   // Message received handler with notification sound
   useEffect(() => {
     const handleMessageReceived = (newMessage) => {
-      // Play notification sound for new messages in other chats
       if (!selectedChat || selectedChat._id !== newMessage.chat._id) {
         try {
           if (notificationSoundRef.current) {
@@ -163,6 +234,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 status: "info",
                 duration: 3000,
                 isClosable: true,
+                position: "top-right"
               });
             });
           }
@@ -179,21 +251,23 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       }
     };
 
-    socket.on("message received", handleMessageReceived);
+    if (socketRef.current) {
+      socketRef.current.on("message received", handleMessageReceived);
+    }
 
     return () => {
-      socket.off("message received", handleMessageReceived);
+      if (socketRef.current) {
+        socketRef.current.off("message received", handleMessageReceived);
+      }
     };
   }, [selectedChat, notification, setNotification, fetchAgain, setFetchAgain, toast]);
 
-
-
   const sendMessage = async (event) => {
-    if (event.key === "Enter" && newMessage) {
+    if (event.key === "Enter" && newMessage && socketRef.current) {
       try {
         // Stop typing indicator before sending
         if (isTypingRef.current) {
-          socket.emit("stop typing", {
+          socketRef.current.emit("stop typing", {
             chatId: selectedChat._id,
             userId: user._id
           });
@@ -205,6 +279,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
             "Content-Type": "application/json",
             Authorization: `Bearer ${user.token}`,
           },
+          withCredentials: true
         };
 
         setNewMessage("");
@@ -214,7 +289,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
           config
         );
 
-        socket.emit("new message", data);
+        socketRef.current.emit("new message", data);
         setMessages((prev) => [...prev, data]);
       } catch (error) {
         toast({
@@ -223,7 +298,9 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
           status: "error",
           duration: 5000,
           isClosable: true,
+          position: "top-right"
         });
+        setNewMessage(newMessage); // Restore the message if sending failed
       }
     }
   };
@@ -231,7 +308,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const typingHandler = (e) => {
     setNewMessage(e.target.value);
 
-    if (!socketConnected || !selectedChat) return;
+    if (!socketConnected || !selectedChat || !socketRef.current) return;
 
     // Clear any existing timeout
     if (typingTimeoutRef.current) {
@@ -242,7 +319,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     if (e.target.value.length > 0) {
       if (!isTypingRef.current) {
         isTypingRef.current = true;
-        socket.emit("typing", {
+        socketRef.current.emit("typing", {
           chatId: selectedChat._id,
           userId: user._id
         });
@@ -252,7 +329,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       typingTimeoutRef.current = setTimeout(() => {
         if (isTypingRef.current) {
           isTypingRef.current = false;
-          socket.emit("stop typing", {
+          socketRef.current.emit("stop typing", {
             chatId: selectedChat._id,
             userId: user._id
           });
@@ -261,7 +338,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     } else if (isTypingRef.current) {
       // Stop typing if input is empty
       isTypingRef.current = false;
-      socket.emit("stop typing", {
+      socketRef.current.emit("stop typing", {
         chatId: selectedChat._id,
         userId: user._id
       });
@@ -275,14 +352,26 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
         clearTimeout(typingTimeoutRef.current);
       }
       // Ensure we stop typing indicator when leaving the chat
-      if (isTypingRef.current) {
-        socket.emit("stop typing", {
+      if (isTypingRef.current && socketRef.current) {
+        socketRef.current.emit("stop typing", {
           chatId: selectedChat?._id,
           userId: user._id
         });
       }
     };
   }, [selectedChat?._id, user._id]);
+
+  const getConnectionStatusIcon = () => {
+    switch(connectionStatus) {
+      case "connected":
+        return <CheckCircleIcon color="green.500" />;
+      case "error":
+      case "failed":
+        return <WarningIcon color="red.500" />;
+      default:
+        return <WarningIcon color="orange.500" />;
+    }
+  };
 
   return (
     <>
@@ -319,6 +408,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 <ProfileModal user={getSenderFull(user, selectedChat.users)} />
               </>
             )}
+            <Tooltip label={`Connection: ${connectionStatus}`}>
+              <Box display="flex" alignItems="center" ml={2}>
+                {getConnectionStatusIcon()}
+              </Box>
+            </Tooltip>
           </Text>
 
           <Box
@@ -362,9 +456,14 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
               <Input
                 variant="filled"
                 bg="#E0E0E0"
-                placeholder="Type a message..."
+                placeholder={socketConnected ? "Type a message..." : "Connecting to chat..."}
                 onChange={typingHandler}
                 value={newMessage}
+                isDisabled={!socketConnected}
+                _disabled={{
+                  cursor: "not-allowed",
+                  bg: "gray.100"
+                }}
               />
             </FormControl>
           </Box>

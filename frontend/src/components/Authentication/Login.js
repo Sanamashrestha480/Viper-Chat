@@ -7,9 +7,7 @@ import {
   InputRightElement,
   VStack,
 } from "@chakra-ui/react";
-import React from "react";
-
-import { useState } from "react";
+import React, { useState } from "react";
 import { useToast } from "@chakra-ui/react";
 import axios from "axios";
 import { useHistory } from "react-router-dom";
@@ -27,7 +25,6 @@ const Login = () => {
   const handleClick = () => setShow(!show);
 
   const submitHandler = async () => {
-    console.log("Submit handler called");
     setLoading(true);
     if (!email || !password) {
       toast({
@@ -44,8 +41,9 @@ const Login = () => {
     try {
       const config = {
         headers: {
-          "Content-type": "application/json",
+          "Content-Type": "application/json",
         },
+        withCredentials: true, // This is crucial for CORS with credentials
       };
 
       const { data } = await axios.post(
@@ -61,14 +59,15 @@ const Login = () => {
         isClosable: true,
         position: "bottom",
       });
+      
       setUser(data);
       localStorage.setItem("userInfo", JSON.stringify(data));
       setLoading(false);
       history.push("/chats");
     } catch (error) {
       toast({
-        title: "Error Occured",
-        description: error.response.data.message,
+        title: "Error Occurred",
+        description: error.response?.data?.message || "Login failed",
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -76,6 +75,14 @@ const Login = () => {
       });
       setLoading(false);
     }
+  };
+
+  // Guest user login handler
+  const handleGuestLogin = async () => {
+    setEmail("guest@gmail.com");
+    setPassword("12345678");
+    // No need to call submitHandler here - the state update will trigger a re-render
+    // and the user can click login with the prefilled credentials
   };
 
   return (
@@ -124,12 +131,8 @@ const Login = () => {
         colorScheme="red"
         width="100%"
         color="white"
-        onClick={() => {
-          setEmail("guest@gmail.com");
-          setPassword("12345678");
-
-          submitHandler(); // Add this line to trigger submission
-        }}
+        onClick={handleGuestLogin}
+        isLoading={loading}
       >
         Get Guest User Credentials
       </Button>
