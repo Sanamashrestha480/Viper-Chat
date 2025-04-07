@@ -6,6 +6,7 @@ import { ChatState } from "./Context/ChatProvider";
 
 function App() {
   return (
+    <ChatState>
     <Router>
       <div className="App">
         <Switch>
@@ -14,6 +15,7 @@ function App() {
         </Switch>
       </div>
     </Router>
+    </ChatState>
   );
 }
 
